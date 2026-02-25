@@ -213,6 +213,9 @@ void FP2Component::check_initialization_() {
 void FP2Component::process_command_queue_() {
   uint32_t now = millis();
 
+  ESP_LOGV(TAG, "cmdq: size=%u waiting_ack=0x%04X", (unsigned) command_queue_.size(),
+           (uint16_t) waiting_for_ack_attr_id_);
+
   // If waiting for ACK
   if (waiting_for_ack_attr_id_ != AttrId::INVALID) {
     if (now - last_command_sent_millis_ > ACK_TIMEOUT_MS) {
@@ -253,6 +256,9 @@ void FP2Component::send_next_command_() {
   auto &cmd = command_queue_.front();
   static uint8_t next_tx_seq = 0;
 
+  ESP_LOGV(TAG, "TX: op=0x%02X attr=0x%04X payload_len=%u", (unsigned) cmd.type, (uint16_t) cmd.attr_id,
+           (unsigned) cmd.data.size());
+
   // Build frame: [Sync][Ver][Ver][Seq][Op][Len][Len][Check][Payload][CRC][CRC]
   std::vector<uint8_t> frame;
   frame.push_back(0x55);  // Sync
@@ -278,6 +284,9 @@ void FP2Component::send_next_command_() {
   uint16_t crc = crc16(frame.data(), frame.size());
   frame.push_back(crc & 0xFF);
   frame.push_back((crc >> 8) & 0xFF);
+
+  ESP_LOGV(TAG, "TX: seq=%u len=%u hchk=0x%02X crc=0x%04X", (unsigned) frame[3], (unsigned) len,
+           (unsigned) frame[7], (unsigned) crc);
 
   write_array(frame);
   last_command_sent_millis_ = millis();
@@ -305,6 +314,8 @@ void FP2Component::send_ack_(AttrId attr_id) {
 
   // ACKs are high priority - push to front of queue
   command_queue_.push_front(cmd);
+
+  ESP_LOGV(TAG, "Enqueued ACK for 0x%04X (cmdq size=%u)", (uint16_t) attr_id, (unsigned) command_queue_.size());
 }
 
 void FP2Component::send_reverse_response_(AttrId attr_id, uint8_t byte_val) {
@@ -320,6 +331,8 @@ void FP2Component::send_reverse_response_(AttrId attr_id, uint8_t byte_val) {
   cmd.data.push_back(byte_val);
 
   command_queue_.push_back(cmd);
+
+  ESP_LOGV(TAG, "Enqueued reverse response: attr=0x%04X val=%u", (uint16_t) attr_id, (unsigned) byte_val);
 }
 
 void FP2Component::handle_incoming_byte_(uint8_t byte) {
@@ -328,6 +341,7 @@ void FP2Component::handle_incoming_byte_(uint8_t byte) {
       state_ = VER_H;
       rx_payload_.clear();
       header_sum_ = byte; // Start sum
+      ESP_LOGV(TAG, "RX: sync");
     }
     return;
   }
@@ -364,9 +378,12 @@ void FP2Component::handle_incoming_byte_(uint8_t byte) {
   case H_CHECK: {
     uint8_t expected = (uint8_t)(~((header_sum_ - 1)));
     if (byte != expected) {
-      ESP_LOGW(TAG, "Header Checksum Fail: Exp %02X, Got %02X", expected, byte);
+      ESP_LOGW(TAG, "Header Checksum Fail: Exp %02X, Got %02X (seq=%u op=0x%02X len=%u)", expected, byte,
+               (unsigned) rx_seq_, (unsigned) rx_opcode_, (unsigned) rx_len_);
       state_ = SYNC;
     } else {
+      ESP_LOGV(TAG, "RX: header ok (seq=%u op=0x%02X len=%u)", (unsigned) rx_seq_, (unsigned) rx_opcode_,
+               (unsigned) rx_len_);
       if (rx_len_ > 4096) { // Sanity check, increased for potential BLOBs
         state_ = SYNC;
       } else if (rx_len_ == 0) {
@@ -406,11 +423,15 @@ void FP2Component::handle_incoming_byte_(uint8_t byte) {
 
     uint16_t calc = crc16(frame.data(), frame.size());
     if (calc == rx_crc_) {
+      ESP_LOGV(TAG, "RX: crc ok (seq=%u op=0x%02X len=%u crc=0x%04X)", (unsigned) rx_seq_,
+               (unsigned) rx_opcode_, (unsigned) rx_len_, (unsigned) rx_crc_);
       // Parse Payload
       // Note: rx_len_ >= 2 to allow Reverse Read Requests (RESPONSE with just SubID, no data)
       if (rx_len_ >= 2) {
         uint16_t attr_id_int = (rx_payload_[0] << 8) | rx_payload_[1];
         AttrId attr_id = (AttrId) attr_id_int;
+        ESP_LOGV(TAG, "RX: frame op=0x%02X attr=0x%04X payload=%u", (unsigned) rx_opcode_, (uint16_t) attr_id,
+                 (unsigned) rx_payload_.size());
         // DataType = rx_payload_[2] (if present)
         handle_parsed_frame_(rx_opcode_, attr_id, rx_payload_);
       }
@@ -429,7 +450,8 @@ void FP2Component::handle_incoming_byte_(uint8_t byte) {
 void FP2Component::handle_parsed_frame_(uint8_t type, AttrId attr_id,
                                         const std::vector<uint8_t> &payload) {
   OpCode op = (OpCode)type;
-  //ESP_LOGI(TAG, "Received t:%d sub_id:%d", type, sub_id);
+  ESP_LOGV(TAG, "Parsed: op=0x%02X attr=0x%04X bytes=%u", (unsigned) type, (uint16_t) attr_id,
+           (unsigned) payload.size());
 
   switch (op) {
     case OpCode::ACK:
@@ -448,6 +470,7 @@ void FP2Component::handle_parsed_frame_(uint8_t type, AttrId attr_id,
 }
 
 void FP2Component::handle_ack_(AttrId attr_id) {
+  ESP_LOGV(TAG, "RX: ACK attr=0x%04X (waiting=0x%04X)", (uint16_t) attr_id, (uint16_t) waiting_for_ack_attr_id_);
   if (waiting_for_ack_attr_id_ == attr_id) {
     ESP_LOGD(TAG, "ACK Received for 0x%04X", (uint16_t) attr_id);
     waiting_for_ack_attr_id_ = AttrId::INVALID;
@@ -461,6 +484,8 @@ void FP2Component::handle_ack_(AttrId attr_id) {
 }
 
 void FP2Component::handle_report_(AttrId attr_id, const std::vector<uint8_t> &payload) {
+  ESP_LOGV(TAG, "RX: REPORT attr=0x%04X bytes=%u dtype=0x%02X", (uint16_t) attr_id, (unsigned) payload.size(),
+           payload.size() >= 3 ? (unsigned) payload[2] : 0xFF);
   // Send ACK for all reports except heartbeat
   if (attr_id != AttrId::RADAR_SW_VERSION) {
     send_ack_(attr_id);
@@ -572,6 +597,7 @@ void FP2Component::handle_location_tracking_report_(const std::vector<uint8_t> &
   }
 
   uint8_t count = payload[5];
+  ESP_LOGV(TAG, "Location tracking report: count=%u bytes=%u", (unsigned) count, (unsigned) payload.size());
 
   // Build binary buffer: [count][target1 14 bytes][target2 14 bytes]...
   // Each target is 14 bytes: id(1), x(2), y(2), z(2), velocity(2), snr(2), classifier(1), posture(1), active(1)
@@ -598,6 +624,8 @@ void FP2Component::handle_location_tracking_report_(const std::vector<uint8_t> &
 }
 
 void FP2Component::handle_temperature_report_(const std::vector<uint8_t> &payload) {
+  ESP_LOGV(TAG, "Temperature report: bytes=%u dtype=0x%02X", (unsigned) payload.size(),
+       payload.size() >= 3 ? (unsigned) payload[2] : 0xFF);
     if (payload.size() == 5 && payload[2] == 0x01) {
         uint16_t temp = payload[3] << 8 | payload[4];
         if (radar_temperature_sensor_ != nullptr) {
@@ -610,6 +638,7 @@ void FP2Component::handle_temperature_report_(const std::vector<uint8_t> &payloa
 }
 
 void FP2Component::handle_response_(AttrId attr_id, const std::vector<uint8_t> &payload) {
+  ESP_LOGV(TAG, "RX: RESPONSE attr=0x%04X bytes=%u", (uint16_t) attr_id, (unsigned) payload.size());
   // RESPONSE packets with only 2 bytes (just SubID) are Reverse Read Requests from the radar
   if (payload.size() == 2) {
     handle_reverse_read_request_(attr_id);
@@ -621,6 +650,11 @@ void FP2Component::handle_response_(AttrId attr_id, const std::vector<uint8_t> &
 
 void FP2Component::handle_reverse_read_request_(AttrId attr_id) {
   ESP_LOGI(TAG, "Received Reverse Query for SubID 0x%04X", (uint16_t) attr_id);
+
+  if (fp2_accel_ == nullptr) {
+    ESP_LOGW(TAG, "Reverse query requested but accel not set");
+    return;
+  }
 
   switch (attr_id) {
     case AttrId::DEVICE_DIRECTION:  // device_direction
@@ -657,6 +691,9 @@ void FP2Component::enqueue_command_(OpCode type, AttrId attr_id,
   cmd.data.push_back(byte_val);
 
   command_queue_.push_back(cmd);
+
+  ESP_LOGV(TAG, "Enqueued: op=0x%02X attr=0x%04X u8=%u (cmdq size=%u)", (unsigned) type, (uint16_t) attr_id,
+           (unsigned) byte_val, (unsigned) command_queue_.size());
 }
 
 void FP2Component::enqueue_command_(OpCode type, AttrId attr_id,
@@ -674,6 +711,9 @@ void FP2Component::enqueue_command_(OpCode type, AttrId attr_id,
   cmd.data.push_back(word_val & 0xFF);
 
   command_queue_.push_back(cmd);
+
+  ESP_LOGV(TAG, "Enqueued: op=0x%02X attr=0x%04X u16=%u (cmdq size=%u)", (unsigned) type, (uint16_t) attr_id,
+           (unsigned) word_val, (unsigned) command_queue_.size());
 }
 
 void FP2Component::enqueue_command_(OpCode type, AttrId attr_id,
@@ -690,6 +730,9 @@ void FP2Component::enqueue_command_(OpCode type, AttrId attr_id,
   cmd.data.push_back((uint8_t) bool_val);
 
   command_queue_.push_back(cmd);
+
+  ESP_LOGV(TAG, "Enqueued: op=0x%02X attr=0x%04X bool=%u (cmdq size=%u)", (unsigned) type, (uint16_t) attr_id,
+           (unsigned) bool_val, (unsigned) command_queue_.size());
 }
 
 
@@ -712,6 +755,9 @@ void FP2Component::enqueue_command_blob2_(
   cmd.data.insert(cmd.data.end(), blob_content.begin(), blob_content.end());
 
   command_queue_.push_back(cmd);
+
+  ESP_LOGV(TAG, "Enqueued: op=0x%02X attr=0x%04X blob2_len=%u (cmdq size=%u)", (unsigned) cmd.type,
+           (uint16_t) attr_id, (unsigned) blob_content.size(), (unsigned) command_queue_.size());
 }
 
 void FP2Component::enqueue_read_(AttrId attr_id) {
