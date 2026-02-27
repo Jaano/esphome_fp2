@@ -47,6 +47,10 @@ uart:
   rx_pin: GPIO18
   baud_rate: 890000
 
+i2c:
+  sda: GPIO33
+  scl: GPIO32
+
 external_components:
   - source:
       type: local
@@ -142,6 +146,12 @@ aqara_fp2:
     name: "Radar Software Version"
   radar_temperature:
     name: "Radar Temperature"
+
+sensor:
+  - platform: opt3001
+    name: "Illuminance"
+    address: 0x44
+    update_interval: 30s
 
 binary_sensor:
   # Button on the bottom of the device
