@@ -113,6 +113,7 @@ enum class AttrId : uint16_t {
     WALL_CORNER_POS                 = 0x0170, // Wall/corner position
     DWELL_TIME_ENABLE               = 0x0172, // Dwell tracking
     WALK_DISTANCE_ENABLE            = 0x0173, // Walking distance
+    WALK_DISTANCE_ZONE              = 0x0175, // Walking distance per zone (Hi=ZoneID, Lo=value) [GUESS]
     INTERFERENCE_MAP                = 0x0110, // Interference map (40B)
     ENTRY_EXIT_MAP                  = 0x0109, // Enter/exit zones (40B)
     EDGE_MAP                        = 0x0107, // Detection boundary (40B)

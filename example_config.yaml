@@ -50,6 +50,8 @@ uart:
 i2c:
   sda: GPIO33
   scl: GPIO32
+  scan: false
+  frequency: 400kHz
 
 external_components:
   - source:
@@ -161,11 +163,28 @@ binary_sensor:
       inverted: true
     name: "Device Button"
 
-# Status LED (README: IO27 - LED). Using one channel of RGB as status.
-# Unused: IO26, IO14
-light:
-  - platform: status_led
-    name: "Status LED"
+# RGB LED: IO14=R, IO26=G, IO27=B. Common-anode, active-low via LEDC PWM.
+output:
+  - platform: ledc
+    id: led_r
+    pin:
+      number: GPIO14
+      inverted: true
+  - platform: ledc
+    id: led_g
+    pin:
+      number: GPIO26
+      inverted: true
+  - platform: ledc
+    id: led_b
     pin:
       number: GPIO27
       inverted: true
+
+light:
+  - platform: rgb
+    name: "Status LED"
+    red: led_r
+    green: led_g
+    blue: led_b
+
