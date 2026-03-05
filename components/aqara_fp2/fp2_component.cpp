@@ -528,6 +528,41 @@ void FP2Component::handle_report_(AttrId attr_id, const std::vector<uint8_t> &pa
         }
         break;
 
+    case AttrId::REALTIME_PEOPLE_COUNTING:
+        // UINT32 report: live (realtime) people count for the whole area.
+        if (payload.size() == 7 && payload[2] == 0x02) {
+            uint32_t count = ((uint32_t) payload[3]) << 24
+                | ((uint32_t) payload[4]) << 16
+                | ((uint32_t) payload[5]) << 8
+                | ((uint32_t) payload[6]);
+            ESP_LOGD(TAG, "Realtime people counting (0x0166): %u", count);
+        } else if (payload.size() >= 3) {
+            ESP_LOGD(TAG, "Realtime people counting (0x0166): unexpected type=0x%02X len=%d",
+                     payload[2], (int) payload.size());
+        }
+        break;
+
+    case AttrId::PEOPLE_COUNTING:
+        // BLOB2 report: per-entity people counting.
+        // Format: [SubID 2B][Type 0x06][Len 2B][ID 1B][ValA 4B (ontime)][ValB 2B (realtime)]
+        // Total data = 7B. Enabled by PEOPLE_COUNT_REPORT_ENABLE (0x0158).
+        if (payload.size() >= 3 && payload[2] == 0x06) {
+            uint16_t len = (payload.size() >= 5) ? ((payload[3] << 8) | payload[4]) : 0;
+            if ((int) payload.size() >= 5 + len && len >= 7) {
+                uint8_t  id   = payload[5];
+                uint32_t valA = ((uint32_t) payload[6] << 24) | ((uint32_t) payload[7] << 16)
+                              | ((uint32_t) payload[8]  << 8)  | payload[9];
+                uint16_t valB = (payload[10] << 8) | payload[11];
+                ESP_LOGD(TAG, "People counting (0x0155): id=%u ontime=%u realtime=%u", id, valA, valB);
+            } else {
+                ESP_LOGD(TAG, "People counting (0x0155): len=%u payload_size=%d", len, (int) payload.size());
+            }
+        } else if (payload.size() >= 3) {
+            ESP_LOGD(TAG, "People counting (0x0155): unexpected type=0x%02X len=%d",
+                     payload[2], (int) payload.size());
+        }
+        break;
+
     case AttrId::ZONE_PRESENCE:  // Zone Presence
         // Payload: [SubID 2B] [Type 0x01(UINT16)] [ValH] [ValL]
         // ValH = ZoneID, ValL = State (1=Occ, 0=Empty)

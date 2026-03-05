@@ -264,7 +264,7 @@ async def to_code(config):
         reset_pin = await cg.gpio_pin_expression(config[CONF_RADAR_RESET_PIN])
         cg.add(var.set_radar_reset_pin(reset_pin))
 
-    cg.add(var.set_mounting_position(config[CONF_MOUNTING_POSITION]))
+    cg.add(var.set_mounting_position(MOUNTING_POSITIONS[config[CONF_MOUNTING_POSITION]]))
     cg.add(var.set_left_right_reverse(config[CONF_LEFT_RIGHT_REVERSE]))
 
     if CONF_GLOBAL_ZONE in config:
@@ -295,6 +295,7 @@ async def to_code(config):
             cg.add(getattr(var, funcName)(sens))
 
     # Generate map config JSON data at compile time
+    # cv.enum returns the string key (not the integer), so use it directly.
     map_config_data = {
         "mounting_position": config[CONF_MOUNTING_POSITION],
         "left_right_reverse": config[CONF_LEFT_RIGHT_REVERSE],

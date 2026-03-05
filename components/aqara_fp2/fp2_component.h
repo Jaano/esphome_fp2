@@ -104,6 +104,10 @@ enum class AttrId : uint16_t {
     PRESENCE_DETECT_SENSITIVITY     = 0x0111, // Sensitivity (1-3)
     CLOSING_SETTING                 = 0x0106, // Proximity (0=far, 1=med, 2=close)
     ZONE_CLOSE_AWAY_ENABLE          = 0x0153, // Zone N close/away enable
+    TARGET_POSTURE_DATA             = 0x0154, // Target posture data report (UINT16)
+    PEOPLE_COUNTING                 = 0x0155, // People counting report (BLOB2, 7B: ID, ValA, ValB)
+    SLEEP_REPORT_ENABLE             = 0x0156, // Sleep report enable
+    POSTURE_REPORT_ENABLE           = 0x0157, // Posture report enable
     FALL_SENSITIVITY                = 0x0123, // Fall sensitivity
     PEOPLE_COUNT_REPORT_ENABLE      = 0x0158, // People counting enable
     PEOPLE_NUMBER_ENABLE            = 0x0162, // People number enable
@@ -132,7 +136,8 @@ enum class AttrId : uint16_t {
     DETECT_ZONE_MOTION              = 0x0115,
     MOTION_DETECT                   = 0x0103,
     PRESENCE_DETECT                 = 0x0104,
-    ONTIME_PEOPLE_NUMBER            = 0x0165,
+    ONTIME_PEOPLE_NUMBER            = 0x0165, // Ontime people number (UINT32)
+    REALTIME_PEOPLE_COUNTING        = 0x0166, // Realtime people counting (UINT32)
     INVALID                         = 0xFFFF,
 };
 
